@@ -1,0 +1,199 @@
+-- ============================================================
+-- BASE DE DATOS: CotizacionesDB
+-- Sistema de Cotización con Inventario
+-- ============================================================
+
+-- 1. Crear la base de datos
+IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'CotizacionesDB')
+BEGIN
+    CREATE DATABASE CotizacionesDB;
+END
+GO
+
+USE CotizacionesDB;
+GO
+
+-- ============================================================
+-- 2. TABLA: Usuarios
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Usuarios' AND xtype='U')
+CREATE TABLE Usuarios (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    Username        NVARCHAR(50)  NOT NULL UNIQUE,
+    PasswordHash    NVARCHAR(256) NOT NULL,
+    NombreCompleto  NVARCHAR(150),
+    Rol             NVARCHAR(20)  DEFAULT 'vendedor',
+    Activo          BIT           DEFAULT 1,
+    FechaCreacion   DATETIME      DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================
+-- 3. TABLA: EmpresaConfig (logo + datos + colores)
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='EmpresaConfig' AND xtype='U')
+CREATE TABLE EmpresaConfig (
+    Id                    INT IDENTITY(1,1) PRIMARY KEY,
+    NombreEmpresa         NVARCHAR(200) NOT NULL,
+    Ruc                   NVARCHAR(20),
+    Direccion             NVARCHAR(300),
+    Telefono1             NVARCHAR(50),
+    Telefono2             NVARCHAR(50),
+    Email                 NVARCHAR(150),
+    Instagram             NVARCHAR(100),
+    Facebook              NVARCHAR(100),
+    SitioWeb              NVARCHAR(150),
+    LogoImage             VARBINARY(MAX),
+    LogoNombreArchivo     NVARCHAR(200),
+    DatosBancariosJson    NVARCHAR(MAX),
+    NotasCotizacion       NVARCHAR(MAX),
+    ValidezDias           INT           DEFAULT 30,
+    TiempoEntrega         NVARCHAR(100) DEFAULT '5-10 días hábiles',
+    PorcentajeIGV         DECIMAL(5,2)  DEFAULT 18.00,
+    Moneda                NVARCHAR(10)  DEFAULT 'S/',
+    ColorPrimario         NVARCHAR(20)  DEFAULT '#69383e',
+    ColorSecundario       NVARCHAR(20)  DEFAULT '#a6a5a0',
+    ColorTerciario        NVARCHAR(20)  DEFAULT '#5d5a55',
+    ColorFondo            NVARCHAR(20)  DEFAULT '#fefefe',
+    FechaModificacion     DATETIME      DEFAULT GETDATE()
+);
+GO
+
+-- Insertar configuración inicial (solo si está vacía)
+IF NOT EXISTS (SELECT * FROM EmpresaConfig)
+BEGIN
+    INSERT INTO EmpresaConfig 
+        (NombreEmpresa, Ruc, Direccion, Telefono1, Telefono2, Email,
+         Instagram, Facebook, NotasCotizacion, DatosBancariosJson)
+    VALUES 
+        ('MI EMPRESA SAC', '20123456789', 'Av. Principal 123 - Lima',
+         '999-999-999', '888-888-888', 'ventas@miempresa.com',
+         '@miempresa', 'MiEmpresa',
+         'Cotización válida por 30 días. Precios en soles peruanos.',
+         '[{"Banco":"BCP","Cuenta":"1917135336099","CCI":"00219100713533609954"}]');
+END
+GO
+
+-- ============================================================
+-- 4. TABLA: Clientes
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Clientes' AND xtype='U')
+CREATE TABLE Clientes (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    Nombre          NVARCHAR(200) NOT NULL,
+    Documento       NVARCHAR(50),
+    Telefono        NVARCHAR(50),
+    Email           NVARCHAR(150),
+    Direccion       NVARCHAR(300),
+    FechaCreacion   DATETIME DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================
+-- 5. TABLA: Productos
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Productos' AND xtype='U')
+CREATE TABLE Productos (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    Codigo          NVARCHAR(50) NOT NULL UNIQUE,
+    Descripcion     NVARCHAR(200) NOT NULL,
+    Precio          DECIMAL(18,2) DEFAULT 0,
+    Stock           INT           DEFAULT 0,
+    FechaCreacion   DATETIME      DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================
+-- 6. TABLA: Inventario (tallas y colores por producto)
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Inventario' AND xtype='U')
+CREATE TABLE Inventario (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    ProductoId      INT NOT NULL,
+    Talla           NVARCHAR(50),
+    Color           NVARCHAR(100),
+    Cantidad        INT DEFAULT 0,
+    FOREIGN KEY (ProductoId) REFERENCES Productos(Id) ON DELETE CASCADE
+);
+GO
+
+-- ============================================================
+-- 7. TABLA: Cotizaciones
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Cotizaciones' AND xtype='U')
+CREATE TABLE Cotizaciones (
+    Id                  INT IDENTITY(1,1) PRIMARY KEY,
+    Numero              NVARCHAR(50) NOT NULL UNIQUE,
+    Fecha               DATETIME     DEFAULT GETDATE(),
+    ClienteId           INT,
+    ClienteNombre       NVARCHAR(200),
+    ClienteDocumento    NVARCHAR(50),
+    Subtotal            DECIMAL(18,2) DEFAULT 0,
+    IGV                 DECIMAL(18,2) DEFAULT 0,
+    Total               DECIMAL(18,2) DEFAULT 0,
+    ConIGV              BIT           DEFAULT 1,
+    Observaciones       NVARCHAR(MAX),
+    UsuarioId           INT,
+    FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+    FOREIGN KEY (UsuarioId) REFERENCES Usuarios(Id)
+);
+GO
+
+-- ============================================================
+-- 8. TABLA: Detalle de Cotizaciones
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CotizacionDetalles' AND xtype='U')
+CREATE TABLE CotizacionDetalles (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    CotizacionId    INT NOT NULL,
+    ProductoId      INT,
+    Codigo          NVARCHAR(50),
+    Descripcion     NVARCHAR(200),
+    Precio          DECIMAL(18,2) DEFAULT 0,
+    Cantidad        INT           DEFAULT 0,
+    Subtotal        DECIMAL(18,2) DEFAULT 0,
+    FOREIGN KEY (CotizacionId) REFERENCES Cotizaciones(Id) ON DELETE CASCADE
+);
+GO
+
+-- ============================================================
+-- 9. DATOS INICIALES
+-- ============================================================
+
+-- Usuario admin por defecto
+-- Usuario: admin
+-- Contraseña: admin123
+IF NOT EXISTS (SELECT * FROM Usuarios WHERE Username = 'admin')
+BEGIN
+    INSERT INTO Usuarios (Username, PasswordHash, NombreCompleto, Rol)
+    VALUES ('admin', 
+            '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9',
+            'Administrador', 
+            'admin');
+END
+GO
+select * from Usuarios;
+
+-- Productos de ejemplo
+IF NOT EXISTS (SELECT * FROM Productos)
+BEGIN
+    INSERT INTO Productos (Codigo, Descripcion, Precio, Stock) VALUES
+    ('P001', 'Laptop HP',          2500.00, 10),
+    ('P002', 'Mouse Inalámbrico',    45.00, 50),
+    ('P003', 'Teclado Mecánico',    120.00, 30),
+    ('P004', 'Monitor 24"',         850.00, 15),
+    ('P005', 'Impresora Láser',    1200.00,  5);
+END
+GO
+
+-- Cliente por defecto
+IF NOT EXISTS (SELECT * FROM Clientes)
+BEGIN
+    INSERT INTO Clientes (Nombre, Documento, Telefono, Email, Direccion) VALUES
+    ('Cliente General', '00000000', '-', '-', '-');
+END
+GO
+
+PRINT '✅ Base de datos CotizacionesDB creada correctamente.';
+PRINT '✅ Usuario admin: admin / admin123';
+GO
