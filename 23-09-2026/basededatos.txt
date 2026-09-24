@@ -22,6 +22,7 @@ CREATE TABLE Usuarios (
     Username        NVARCHAR(50)  NOT NULL UNIQUE,
     PasswordHash    NVARCHAR(256) NOT NULL,
     NombreCompleto  NVARCHAR(150),
+    Email           NVARCHAR(150),
     Rol             NVARCHAR(20)  DEFAULT 'vendedor',
     Activo          BIT           DEFAULT 1,
     FechaCreacion   DATETIME      DEFAULT GETDATE()
@@ -55,6 +56,7 @@ CREATE TABLE EmpresaConfig (
     ColorSecundario       NVARCHAR(20)  DEFAULT '#a6a5a0',
     ColorTerciario        NVARCHAR(20)  DEFAULT '#5d5a55',
     ColorFondo            NVARCHAR(20)  DEFAULT '#fefefe',
+    ColorPdf              NVARCHAR(20)  DEFAULT '#69383e',   -- ✅ NUEVO
     FechaModificacion     DATETIME      DEFAULT GETDATE()
 );
 GO
@@ -64,18 +66,37 @@ IF NOT EXISTS (SELECT * FROM EmpresaConfig)
 BEGIN
     INSERT INTO EmpresaConfig 
         (NombreEmpresa, Ruc, Direccion, Telefono1, Telefono2, Email,
-         Instagram, Facebook, NotasCotizacion, DatosBancariosJson)
+         Instagram, Facebook, NotasCotizacion)
     VALUES 
         ('MI EMPRESA SAC', '20123456789', 'Av. Principal 123 - Lima',
          '999-999-999', '888-888-888', 'ventas@miempresa.com',
          '@miempresa', 'MiEmpresa',
-         'Cotización válida por 30 días. Precios en soles peruanos.',
-         '[{"Banco":"BCP","Cuenta":"1917135336099","CCI":"00219100713533609954"}]');
+         'Cotización válida por 30 días. Precios en soles peruanos.');
 END
 GO
 
 -- ============================================================
--- 4. TABLA: Clientes
+-- 4. TABLA: Bancos (cuentas bancarias)
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Bancos' AND xtype='U')
+CREATE TABLE Bancos (
+    Id      INT IDENTITY(1,1) PRIMARY KEY,
+    Banco   NVARCHAR(100),
+    Cuenta  NVARCHAR(50),
+    CCI     NVARCHAR(50)
+);
+GO
+
+-- Insertar un banco de ejemplo (solo si está vacía)
+IF NOT EXISTS (SELECT * FROM Bancos)
+BEGIN
+    INSERT INTO Bancos (Banco, Cuenta, CCI) VALUES
+    ('BCP', '1917135336099', '00219100713533609954');
+END
+GO
+
+-- ============================================================
+-- 5. TABLA: Clientes
 -- ============================================================
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Clientes' AND xtype='U')
 CREATE TABLE Clientes (
@@ -90,7 +111,7 @@ CREATE TABLE Clientes (
 GO
 
 -- ============================================================
--- 5. TABLA: Productos
+-- 6. TABLA: Productos
 -- ============================================================
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Productos' AND xtype='U')
 CREATE TABLE Productos (
@@ -104,7 +125,7 @@ CREATE TABLE Productos (
 GO
 
 -- ============================================================
--- 6. TABLA: Inventario (tallas y colores por producto)
+-- 7. TABLA: Inventario (tallas y colores por producto)
 -- ============================================================
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Inventario' AND xtype='U')
 CREATE TABLE Inventario (
@@ -118,7 +139,7 @@ CREATE TABLE Inventario (
 GO
 
 -- ============================================================
--- 7. TABLA: Cotizaciones
+-- 8. TABLA: Cotizaciones
 -- ============================================================
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Cotizaciones' AND xtype='U')
 CREATE TABLE Cotizaciones (
@@ -140,7 +161,8 @@ CREATE TABLE Cotizaciones (
 GO
 
 -- ============================================================
--- 8. TABLA: Detalle de Cotizaciones
+-- 9. TABLA: Detalle de Cotizaciones
+-- ✅ AHORA CON Talla y Color
 -- ============================================================
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CotizacionDetalles' AND xtype='U')
 CREATE TABLE CotizacionDetalles (
@@ -149,6 +171,8 @@ CREATE TABLE CotizacionDetalles (
     ProductoId      INT,
     Codigo          NVARCHAR(50),
     Descripcion     NVARCHAR(200),
+    Talla           NVARCHAR(50),      -- ✅ NUEVO
+    Color           NVARCHAR(100),     -- ✅ NUEVO
     Precio          DECIMAL(18,2) DEFAULT 0,
     Cantidad        INT           DEFAULT 0,
     Subtotal        DECIMAL(18,2) DEFAULT 0,
@@ -157,7 +181,48 @@ CREATE TABLE CotizacionDetalles (
 GO
 
 -- ============================================================
--- 9. DATOS INICIALES
+-- 9b. AGREGAR Talla y Color SI LA TABLA YA EXISTÍA SIN ELLAS
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('CotizacionDetalles') AND name = 'Talla')
+BEGIN
+    ALTER TABLE CotizacionDetalles ADD Talla NVARCHAR(50) NULL;
+    PRINT 'Columna Talla agregada a CotizacionDetalles';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('CotizacionDetalles') AND name = 'Color')
+BEGIN
+    ALTER TABLE CotizacionDetalles ADD Color NVARCHAR(100) NULL;
+    PRINT 'Columna Color agregada a CotizacionDetalles';
+END
+GO
+
+-- ============================================================
+-- 9c. AGREGAR ColorPdf SI LA TABLA EmpresaConfig YA EXISTÍA
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('EmpresaConfig') AND name = 'ColorPdf')
+BEGIN
+    ALTER TABLE EmpresaConfig ADD ColorPdf NVARCHAR(20) DEFAULT '#69383e';
+    PRINT 'Columna ColorPdf agregada a EmpresaConfig';
+END
+GO
+
+-- ============================================================
+-- 9d. AGREGAR Email A Usuarios SI NO EXISTE
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('Usuarios') AND name = 'Email')
+BEGIN
+    ALTER TABLE Usuarios ADD Email NVARCHAR(150);
+    PRINT 'Columna Email agregada a Usuarios';
+END
+GO
+
+-- ============================================================
+-- 10. DATOS INICIALES
 -- ============================================================
 
 -- Usuario admin por defecto
@@ -172,7 +237,6 @@ BEGIN
             'admin');
 END
 GO
-select * from Usuarios;
 
 -- Productos de ejemplo
 IF NOT EXISTS (SELECT * FROM Productos)
@@ -194,6 +258,37 @@ BEGIN
 END
 GO
 
+-- ============================================================
+-- 11. VERIFICACIÓN
+-- ============================================================
+SELECT 'Usuarios' AS Tabla, COUNT(*) AS Registros FROM Usuarios
+UNION ALL SELECT 'EmpresaConfig', COUNT(*) FROM EmpresaConfig
+UNION ALL SELECT 'Bancos', COUNT(*) FROM Bancos
+UNION ALL SELECT 'Clientes', COUNT(*) FROM Clientes
+UNION ALL SELECT 'Productos', COUNT(*) FROM Productos
+UNION ALL SELECT 'Inventario', COUNT(*) FROM Inventario
+UNION ALL SELECT 'Cotizaciones', COUNT(*) FROM Cotizaciones
+UNION ALL SELECT 'CotizacionDetalles', COUNT(*) FROM CotizacionDetalles;
+GO
+
+-- Verificar columnas de CotizacionDetalles
+PRINT '--- Estructura de CotizacionDetalles ---';
+SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'CotizacionDetalles'
+ORDER BY ORDINAL_POSITION;
+GO
+
+-- Verificar columnas de EmpresaConfig
+PRINT '--- Estructura de EmpresaConfig ---';
+SELECT COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'EmpresaConfig'
+ORDER BY ORDINAL_POSITION;
+GO
+
 PRINT '✅ Base de datos CotizacionesDB creada correctamente.';
 PRINT '✅ Usuario admin: admin / admin123';
-GO
+PRINT '✅ Tablas creadas: Usuarios, EmpresaConfig, Bancos, Clientes, Productos, Inventario, Cotizaciones, CotizacionDetalles';
+PRINT '✅ CotizacionDetalles incluye: Talla, Color';
+PRINT '✅ EmpresaConfig incluye: ColorPdf';
