@@ -1,0 +1,429 @@
+-- ============================================================
+-- BASE DE DATOS: CotizacionesDB
+-- Sistema de Cotización con Inventario
+-- Versión FINAL corregida y completa
+-- ============================================================
+
+-- 1. Crear la base de datos
+IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'CotizacionesDB')
+BEGIN
+    CREATE DATABASE CotizacionesDB;
+END
+GO
+
+USE CotizacionesDB;
+GO
+
+-- ============================================================
+-- 2. TABLA: Usuarios
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Usuarios' AND xtype='U')
+CREATE TABLE Usuarios (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    Username        NVARCHAR(50)  NOT NULL UNIQUE,
+    PasswordHash    NVARCHAR(256) NOT NULL,
+    NombreCompleto  NVARCHAR(150),
+    Email           NVARCHAR(150),
+    Rol             NVARCHAR(20)  DEFAULT 'vendedor',
+    Activo          BIT           DEFAULT 1,
+    FechaCreacion   DATETIME      DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================
+-- 3. TABLA: EmpresaConfig
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='EmpresaConfig' AND xtype='U')
+CREATE TABLE EmpresaConfig (
+    Id                    INT IDENTITY(1,1) PRIMARY KEY,
+    NombreEmpresa         NVARCHAR(200) NOT NULL,
+    Ruc                   NVARCHAR(20),
+    Direccion             NVARCHAR(300),
+    Telefono1             NVARCHAR(50),
+    Telefono2             NVARCHAR(50),
+    Email                 NVARCHAR(150),
+    Instagram             NVARCHAR(100),
+    Facebook              NVARCHAR(100),
+    SitioWeb              NVARCHAR(150),
+    LogoImage             VARBINARY(MAX),
+    LogoNombreArchivo     NVARCHAR(200),
+    DatosBancariosJson    NVARCHAR(MAX),
+    NotasCotizacion       NVARCHAR(MAX),
+    ValidezDias           INT           DEFAULT 30,
+    TiempoEntrega         NVARCHAR(100) DEFAULT '5-10 días hábiles',
+    PorcentajeIGV         DECIMAL(5,2)  DEFAULT 18.00,
+    Moneda                NVARCHAR(10)  DEFAULT 'S/',
+    ColorPrimario         NVARCHAR(20)  DEFAULT '#69383e',
+    ColorSecundario       NVARCHAR(20)  DEFAULT '#a6a5a0',
+    ColorTerciario        NVARCHAR(20)  DEFAULT '#5d5a55',
+    ColorFondo            NVARCHAR(20)  DEFAULT '#fefefe',
+    ColorPdf              NVARCHAR(20)  DEFAULT '#69383e',
+    FechaModificacion     DATETIME      DEFAULT GETDATE()
+);
+GO
+
+-- Insertar configuración inicial
+IF NOT EXISTS (SELECT * FROM EmpresaConfig)
+BEGIN
+    INSERT INTO EmpresaConfig 
+        (NombreEmpresa, Ruc, Direccion, Telefono1, Telefono2, Email,
+         Instagram, Facebook, NotasCotizacion)
+    VALUES 
+        ('MI EMPRESA SAC', '20123456789', 'Av. Principal 123 - Lima',
+         '999-999-999', '888-888-888', 'ventas@miempresa.com',
+         '@miempresa', 'MiEmpresa',
+         'Cotización válida por 30 días. Precios en soles peruanos.');
+END
+GO
+
+-- ============================================================
+-- 4. TABLA: Bancos
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Bancos' AND xtype='U')
+CREATE TABLE Bancos (
+    Id      INT IDENTITY(1,1) PRIMARY KEY,
+    Banco   NVARCHAR(100),
+    Cuenta  NVARCHAR(50),
+    CCI     NVARCHAR(50)
+);
+GO
+
+IF NOT EXISTS (SELECT * FROM Bancos)
+BEGIN
+    INSERT INTO Bancos (Banco, Cuenta, CCI) VALUES
+    ('BCP', '1917135336099', '00219100713533609954');
+END
+GO
+
+-- ============================================================
+-- 5. TABLA: Clientes
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Clientes' AND xtype='U')
+CREATE TABLE Clientes (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    Nombre          NVARCHAR(200) NOT NULL,
+    Documento       NVARCHAR(50),
+    Telefono        NVARCHAR(50),
+    Email           NVARCHAR(150),
+    Direccion       NVARCHAR(300),
+    FechaCreacion   DATETIME DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================
+-- 6. TABLA: Productos
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Productos' AND xtype='U')
+CREATE TABLE Productos (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    Codigo          NVARCHAR(50) NOT NULL UNIQUE,
+    Descripcion     NVARCHAR(200) NOT NULL,
+    Precio          DECIMAL(18,2) DEFAULT 0,
+    Stock           INT           DEFAULT 0,
+    FechaCreacion   DATETIME      DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================
+-- 7. TABLA: Inventario (tallas y colores por producto)
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Inventario' AND xtype='U')
+CREATE TABLE Inventario (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    ProductoId      INT NOT NULL,
+    Talla           NVARCHAR(50),
+    Color           NVARCHAR(100),
+    Cantidad        INT DEFAULT 0,
+    FOREIGN KEY (ProductoId) REFERENCES Productos(Id) ON DELETE CASCADE
+);
+GO
+
+-- ============================================================
+-- 8. TABLA: Cotizaciones (cabecera)
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Cotizaciones' AND xtype='U')
+CREATE TABLE Cotizaciones (
+    Id                  INT IDENTITY(1,1) PRIMARY KEY,
+    Numero              NVARCHAR(50) NOT NULL UNIQUE,
+    Fecha               DATETIME     DEFAULT GETDATE(),
+    ClienteId           INT,
+    ClienteNombre       NVARCHAR(200),
+    ClienteDocumento    NVARCHAR(50),
+    Subtotal            DECIMAL(18,2) DEFAULT 0,
+    IGV                 DECIMAL(18,2) DEFAULT 0,
+    Total               DECIMAL(18,2) DEFAULT 0,
+    ConIGV              BIT           DEFAULT 1,
+    Observaciones       NVARCHAR(MAX),
+    UsuarioId           INT,
+    FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+    FOREIGN KEY (UsuarioId) REFERENCES Usuarios(Id)
+);
+GO
+
+-- ============================================================
+-- 9. TABLA: CotizacionDetalles
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CotizacionDetalles' AND xtype='U')
+CREATE TABLE CotizacionDetalles (
+    Id              INT IDENTITY(1,1) PRIMARY KEY,
+    CotizacionId    INT NOT NULL,
+    ProductoId      INT           NULL,
+    Codigo          NVARCHAR(50)  NULL,
+    Descripcion     NVARCHAR(500) NULL,
+    Talla           NVARCHAR(50)  NULL,
+    Color           NVARCHAR(100) NULL,
+    Precio          DECIMAL(18,2) DEFAULT 0,
+    Cantidad        INT           DEFAULT 0,
+    Subtotal        DECIMAL(18,2) DEFAULT 0,
+    EsLibre         BIT           DEFAULT 0,
+    FOREIGN KEY (CotizacionId) REFERENCES Cotizaciones(Id) ON DELETE CASCADE
+);
+GO
+
+-- ============================================================
+-- 9b. AGREGAR COLUMNAS SI LA TABLA YA EXISTÍA
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('CotizacionDetalles') AND name = 'Talla')
+BEGIN
+    ALTER TABLE CotizacionDetalles ADD Talla NVARCHAR(50) NULL;
+    PRINT '✅ Columna Talla agregada a CotizacionDetalles';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('CotizacionDetalles') AND name = 'Color')
+BEGIN
+    ALTER TABLE CotizacionDetalles ADD Color NVARCHAR(100) NULL;
+    PRINT '✅ Columna Color agregada a CotizacionDetalles';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('CotizacionDetalles') AND name = 'EsLibre')
+BEGIN
+    ALTER TABLE CotizacionDetalles ADD EsLibre BIT DEFAULT 0;
+    PRINT '✅ Columna EsLibre agregada a CotizacionDetalles';
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.columns 
+           WHERE object_id = OBJECT_ID('CotizacionDetalles') 
+             AND name = 'Descripcion' 
+             AND max_length < 1000)
+BEGIN
+    ALTER TABLE CotizacionDetalles ALTER COLUMN Descripcion NVARCHAR(500) NULL;
+    PRINT '✅ Columna Descripcion ampliada a NVARCHAR(500)';
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.columns 
+           WHERE object_id = OBJECT_ID('CotizacionDetalles') 
+             AND name = 'ProductoId' 
+             AND is_nullable = 0)
+BEGIN
+    ALTER TABLE CotizacionDetalles ALTER COLUMN ProductoId INT NULL;
+    PRINT '✅ Columna ProductoId ahora permite NULL';
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.columns 
+           WHERE object_id = OBJECT_ID('CotizacionDetalles') 
+             AND name = 'Codigo' 
+             AND is_nullable = 0)
+BEGIN
+    ALTER TABLE CotizacionDetalles ALTER COLUMN Codigo NVARCHAR(50) NULL;
+    PRINT '✅ Columna Codigo ahora permite NULL';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('EmpresaConfig') AND name = 'ColorPdf')
+BEGIN
+    ALTER TABLE EmpresaConfig ADD ColorPdf NVARCHAR(20) DEFAULT '#69383e';
+    PRINT '✅ Columna ColorPdf agregada a EmpresaConfig';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns 
+               WHERE object_id = OBJECT_ID('Usuarios') AND name = 'Email')
+BEGIN
+    ALTER TABLE Usuarios ADD Email NVARCHAR(150);
+    PRINT '✅ Columna Email agregada a Usuarios';
+END
+GO
+
+-- ============================================================
+-- 9c. ÍNDICES PARA MEJORAR RENDIMIENTO
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Cotizaciones_Numero')
+    CREATE INDEX IX_Cotizaciones_Numero ON Cotizaciones(Numero);
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Cotizaciones_Fecha')
+    CREATE INDEX IX_Cotizaciones_Fecha ON Cotizaciones(Fecha DESC);
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Cotizaciones_ClienteNombre')
+    CREATE INDEX IX_Cotizaciones_ClienteNombre ON Cotizaciones(ClienteNombre);
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CotizacionDetalles_CotizacionId')
+    CREATE INDEX IX_CotizacionDetalles_CotizacionId ON CotizacionDetalles(CotizacionId);
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Inventario_ProductoId')
+    CREATE INDEX IX_Inventario_ProductoId ON Inventario(ProductoId);
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Clientes_Nombre')
+    CREATE INDEX IX_Clientes_Nombre ON Clientes(Nombre);
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Productos_Codigo')
+    CREATE INDEX IX_Productos_Codigo ON Productos(Codigo);
+GO
+
+-- ============================================================
+-- 10. DATOS INICIALES
+-- ============================================================
+
+-- Usuario admin por defecto
+-- Usuario: admin / Contraseña: admin123
+IF NOT EXISTS (SELECT * FROM Usuarios WHERE Username = 'admin')
+BEGIN
+    INSERT INTO Usuarios (Username, PasswordHash, NombreCompleto, Rol)
+    VALUES ('admin', 
+            '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9',
+            'Administrador', 
+            'admin');
+END
+GO
+
+-- Productos de ejemplo
+IF NOT EXISTS (SELECT * FROM Productos)
+BEGIN
+    INSERT INTO Productos (Codigo, Descripcion, Precio, Stock) VALUES
+    ('P001', 'Laptop HP',          2500.00, 10),
+    ('P002', 'Mouse Inalámbrico',    45.00, 50),
+    ('P003', 'Teclado Mecánico',    120.00, 30),
+    ('P004', 'Monitor 24"',         850.00, 15),
+    ('P005', 'Impresora Láser',    1200.00,  5);
+END
+GO
+
+-- Cliente por defecto
+IF NOT EXISTS (SELECT * FROM Clientes)
+BEGIN
+    INSERT INTO Clientes (Nombre, Documento, Telefono, Email, Direccion) VALUES
+    ('Cliente General', '00000000', '-', '-', '-');
+END
+GO
+
+-- Inventario de ejemplo (tallas y colores)
+IF NOT EXISTS (SELECT * FROM Inventario)
+BEGIN
+    DECLARE @prodLaptop INT = (SELECT Id FROM Productos WHERE Codigo = 'P001');
+    DECLARE @prodMouse  INT = (SELECT Id FROM Productos WHERE Codigo = 'P002');
+    DECLARE @prodTeclado INT = (SELECT Id FROM Productos WHERE Codigo = 'P003');
+
+    IF @prodLaptop IS NOT NULL
+    BEGIN
+        INSERT INTO Inventario (ProductoId, Talla, Color, Cantidad) VALUES
+        (@prodLaptop, '15"', 'Negro', 5),
+        (@prodLaptop, '15"', 'Plateado', 3),
+        (@prodLaptop, '17"', 'Negro', 2);
+    END
+
+    IF @prodMouse IS NOT NULL
+    BEGIN
+        INSERT INTO Inventario (ProductoId, Talla, Color, Cantidad) VALUES
+        (@prodMouse, 'Estándar', 'Negro', 30),
+        (@prodMouse, 'Estándar', 'Blanco', 20);
+    END
+
+    IF @prodTeclado IS NOT NULL
+    BEGIN
+        INSERT INTO Inventario (ProductoId, Talla, Color, Cantidad) VALUES
+        (@prodTeclado, 'Full', 'Negro', 20),
+        (@prodTeclado, 'Full', 'Blanco', 10);
+    END
+END
+GO
+
+-- ============================================================
+-- 11. LIMPIAR DUPLICADOS (POR SI ACASO)
+-- ============================================================
+PRINT '--- Limpiando duplicados de Productos ---';
+WITH Duplicados AS (
+    SELECT Id,
+           ROW_NUMBER() OVER (PARTITION BY Codigo ORDER BY Id) AS rn
+    FROM Productos
+)
+DELETE FROM Productos
+WHERE Id IN (SELECT Id FROM Duplicados WHERE rn > 1);
+GO
+
+PRINT '--- Limpiando duplicados de Inventario ---';
+WITH DuplicadosInv AS (
+    SELECT Id,
+           ROW_NUMBER() OVER (PARTITION BY ProductoId, Talla, Color ORDER BY Id) AS rn
+    FROM Inventario
+)
+DELETE FROM Inventario
+WHERE Id IN (SELECT Id FROM DuplicadosInv WHERE rn > 1);
+GO
+
+-- ============================================================
+-- 12. VERIFICACIÓN
+-- ============================================================
+PRINT '--- Verificación de tablas ---';
+SELECT 'Usuarios' AS Tabla, COUNT(*) AS Registros FROM Usuarios
+UNION ALL SELECT 'EmpresaConfig', COUNT(*) FROM EmpresaConfig
+UNION ALL SELECT 'Bancos', COUNT(*) FROM Bancos
+UNION ALL SELECT 'Clientes', COUNT(*) FROM Clientes
+UNION ALL SELECT 'Productos', COUNT(*) FROM Productos
+UNION ALL SELECT 'Inventario', COUNT(*) FROM Inventario
+UNION ALL SELECT 'Cotizaciones', COUNT(*) FROM Cotizaciones
+UNION ALL SELECT 'CotizacionDetalles', COUNT(*) FROM CotizacionDetalles;
+GO
+
+PRINT '--- Productos ---';
+SELECT Id, Codigo, Descripcion, Precio, Stock 
+FROM Productos ORDER BY Codigo;
+GO
+
+PRINT '--- Inventario con nombre de producto ---';
+SELECT p.Codigo, p.Descripcion, i.Talla, i.Color, i.Cantidad
+FROM Productos p
+LEFT JOIN Inventario i ON i.ProductoId = p.Id
+ORDER BY p.Codigo, i.Id;
+GO
+
+PRINT '--- Estructura de CotizacionDetalles ---';
+SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'CotizacionDetalles'
+ORDER BY ORDINAL_POSITION;
+GO
+
+PRINT '--- Índices creados ---';
+SELECT 
+    t.name AS Tabla,
+    i.name AS Indice,
+    i.type_desc AS Tipo
+FROM sys.indexes i
+INNER JOIN sys.tables t ON i.object_id = t.object_id
+WHERE i.name IS NOT NULL 
+  AND t.name IN ('Cotizaciones', 'CotizacionDetalles', 'Inventario', 'Clientes', 'Productos')
+ORDER BY t.name, i.name;
+GO
+
+PRINT '✅ Base de datos CotizacionesDB creada correctamente.';
+PRINT '✅ Usuario admin: admin / admin123';
+PRINT '✅ Tablas: Usuarios, EmpresaConfig, Bancos, Clientes, Productos, Inventario, Cotizaciones, CotizacionDetalles';
+PRINT '✅ CotizacionDetalles incluye: Talla, Color, EsLibre, Descripcion (500)';
+PRINT '✅ EmpresaConfig incluye: ColorPdf';
+PRINT '✅ Índices creados para mejorar rendimiento';
+PRINT '✅ Duplicados eliminados automáticamente';
+GO
