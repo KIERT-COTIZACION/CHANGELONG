@@ -1,0 +1,458 @@
+-- ============================================
+-- COMAS TECH — Base de datos completa
+-- Ejecutar en MySQL 8+ / MariaDB 10.4+
+-- ============================================
+
+DROP DATABASE IF EXISTS comas_tech;
+CREATE DATABASE comas_tech
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_unicode_ci;
+
+USE comas_tech;
+
+-- ============================================
+-- 1. USUARIOS
+-- ============================================
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  full_name VARCHAR(150) NOT NULL,
+  email VARCHAR(150) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  phone VARCHAR(20),
+  role ENUM('student','admin') DEFAULT 'student',
+  active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_users_email (email),
+  INDEX idx_users_role (role)
+);
+
+-- ============================================
+-- 2. CURSOS
+-- ============================================
+CREATE TABLE IF NOT EXISTS courses (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(150) NOT NULL,
+  slug VARCHAR(150) UNIQUE,
+  description TEXT,
+  image_url VARCHAR(500),
+  category VARCHAR(100),
+  duration_weeks INT DEFAULT 4,
+  modality VARCHAR(50) DEFAULT 'virtual',
+  price DECIMAL(10,2) NOT NULL,
+  has_certification TINYINT(1) DEFAULT 1,
+  active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_courses_active (active),
+  INDEX idx_courses_category (category)
+);
+
+-- ============================================
+-- 3. PLANES DE PAGO
+-- ============================================
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  course_id INT NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  installments INT DEFAULT 1,
+  total_amount DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+  INDEX idx_plans_course (course_id)
+);
+
+-- ============================================
+-- 4. ORDENES / INSCRIPCIONES
+-- ============================================
+CREATE TABLE IF NOT EXISTS orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  course_id INT NOT NULL,
+  payment_plan_id INT NULL,
+  full_name VARCHAR(150) NOT NULL,
+  email VARCHAR(150) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  document_number_hash VARCHAR(255) NOT NULL,
+  document_last4 VARCHAR(4),
+  payment_method ENUM('yape','plin') NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  receipt_url VARCHAR(500) NULL,
+  status ENUM('pendiente','en_revision','pagado','rechazado') DEFAULT 'pendiente',
+  admin_notes TEXT NULL,
+  reviewed_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (course_id) REFERENCES courses(id),
+  FOREIGN KEY (payment_plan_id) REFERENCES payment_plans(id),
+  INDEX idx_orders_status (status),
+  INDEX idx_orders_created (created_at),
+  INDEX idx_orders_user (user_id),
+  INDEX idx_orders_course (course_id)
+);
+
+-- ============================================
+-- 5. MATRICULAS (curso abierto para el usuario)
+-- ============================================
+CREATE TABLE IF NOT EXISTS enrollments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  course_id INT NOT NULL,
+  order_id INT NOT NULL,
+  opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_user_course (user_id, course_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- 6. CONTACTOS
+-- ============================================
+CREATE TABLE IF NOT EXISTS contacts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150),
+  email VARCHAR(150),
+  phone VARCHAR(20),
+  message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_contacts_created (created_at)
+);
+
+-- ============================================
+-- 7. CONFIGURACIÓN DEL SITIO (video de la Home, etc.)
+-- ============================================
+CREATE TABLE IF NOT EXISTS site_settings (
+  `key` VARCHAR(100) PRIMARY KEY,
+  `value` TEXT,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- 8. USUARIO ADMIN POR DEFECTO
+-- Email: admin@comastech.pe
+-- Password: admin123
+-- ============================================
+INSERT INTO users (full_name, email, password_hash, role)
+VALUES (
+  'Admin Comas TECH',
+  'admin@comastech.pe',
+  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
+  'admin'
+)
+ON DUPLICATE KEY UPDATE email = email;
+
+
+
+
+
+
+USE comas_tech;
+
+UPDATE users
+SET password_hash = '$2a$10$BlUUcs/K53xEdfqVngAyke8t6RZVV.EBaByrlAI954DZL5NnLYpo6'
+WHERE email = 'admin@comastech.pe';
+-- ============================================
+-- 9. CONFIGURACIÓN INICIAL DEL SITIO
+-- ============================================
+INSERT INTO site_settings (`key`, `value`) VALUES
+  ('home_video_url', NULL),
+  ('home_video_title', 'Conoce Comas TECH'),
+  ('site_name', 'Comas TECH'),
+  ('contact_email', 'contacto@comastech.pe'),
+  ('contact_phone', '+51 999 999 999')
+ON DUPLICATE KEY UPDATE `key` = `key`;
+
+-- ============================================
+-- 10. CURSOS (24 en total, todas las edades)
+-- ============================================
+INSERT INTO courses
+(title, slug, description, image_url, category, duration_weeks, modality, price, has_certification)
+VALUES
+-- 🧑‍💻 Base
+('Desarrollo Web con Inteligencia Artificial', 'desarrollo-web-ia',
+ 'Aprende a crear paginas y aplicaciones web modernas apoyandote en herramientas de IA generativa. Ideal para personas que quieren su primer empleo tech.',
+ '/images/curso-web-ia.jpg', 'Programacion', 8, 'virtual', 150.00, 1),
+
+('Ciberseguridad Basica', 'ciberseguridad-basica',
+ 'Fundamentos de seguridad informatica, buenas practicas y proteccion de datos personales en internet. Para personas de todas las edades.',
+ '/images/curso-ciberseguridad.jpg', 'Seguridad', 6, 'virtual', 120.00, 1),
+
+('Edicion de Video y Contenido Digital', 'edicion-video-digital',
+ 'Domina herramientas de edicion de video e imagen para redes sociales y emprendimientos digitales.',
+ '/images/curso-video.jpg', 'Diseno', 5, 'presencial', 100.00, 1),
+
+('Automatizacion e IA para el Trabajo', 'automatizacion-ia-trabajo',
+ 'Usa herramientas de inteligencia artificial para automatizar tareas y aumentar tu productividad.',
+ '/images/curso-automatizacion.jpg', 'Inteligencia Artificial', 4, 'virtual', 90.00, 1),
+
+-- 🧒 Niños (8-12)
+('Programacion de Videojuegos para Niños', 'videojuegos-ninos',
+ 'Aprende a crear tus propios videojuegos con Scratch y bloques visuales. Ideal para niños y niñas de 8 a 12 años.',
+ '/images/curso-videojuegos-ninos.jpg', 'Programacion', 6, 'virtual', 90.00, 1),
+
+-- 🧑 Adolescentes (13-17)
+('Robotica y Electronica para Adolescentes', 'robotica-adolescentes',
+ 'Diseña y construye robots basicos con Arduino. Curso practico para adolescentes de 13 a 17 años.',
+ '/images/curso-robotica.jpg', 'Programacion', 8, 'presencial', 130.00, 1),
+
+('Diseno Grafico Digital para Adolescentes', 'diseno-grafico-adolescentes',
+ 'Aprende Photoshop, Illustrator y Canva para crear afiches, logos y contenido para redes sociales.',
+ '/images/curso-diseno-adolescentes.jpg', 'Diseno', 6, 'virtual', 110.00, 1),
+
+-- 👨‍💼 Adultos (18-59)
+('Excel Avanzado para el Trabajo', 'excel-avanzado',
+ 'Domina tablas dinamicas, macros, formulas avanzadas y analisis de datos.',
+ '/images/curso-excel-avanzado.jpg', 'Productividad', 5, 'virtual', 100.00, 1),
+
+('Marketing Digital y Redes Sociales', 'marketing-digital',
+ 'Aprende a crear campanas, gestionar redes, hacer publicidad en Meta y Google Ads.',
+ '/images/curso-marketing-digital.jpg', 'Marketing', 8, 'virtual', 140.00, 1),
+
+('Contabilidad Basica con Software', 'contabilidad-basica',
+ 'Lleva la contabilidad de tu negocio con herramientas digitales.',
+ '/images/curso-contabilidad.jpg', 'Negocios', 6, 'virtual', 120.00, 1),
+
+('Community Manager Profesional', 'community-manager',
+ 'Gestiona comunidades digitales, crea contenido estrategico y mide resultados.',
+ '/images/curso-community-manager.jpg', 'Marketing', 6, 'virtual', 130.00, 1),
+
+('Fotografia Digital y Edicion Profesional', 'fotografia-digital',
+ 'Domina tu camara o celular, composicion, iluminacion y edicion en Lightroom y Photoshop.',
+ '/images/curso-fotografia.jpg', 'Diseno', 5, 'presencial', 110.00, 1),
+
+-- 🧓 Adultos mayores (60+)
+('Computacion Basica para Adultos Mayores', 'computacion-adultos-mayores',
+ 'Aprende a usar la computadora, internet, correo electronico y redes sociales a tu ritmo.',
+ '/images/curso-computacion-adultos.jpg', 'Tecnologia Basica', 6, 'presencial', 80.00, 1),
+
+('Uso del Celular y Aplicaciones Utiles', 'celular-adultos-mayores',
+ 'Aprende a usar WhatsApp, Yape, Google Maps, YouTube y apps utiles en tu dia a dia.',
+ '/images/curso-celular-adultos.jpg', 'Tecnologia Basica', 4, 'presencial', 70.00, 1),
+
+-- 💼 Emprendedores y profesionales
+('Finanzas Personales y Ahorro Digital', 'finanzas-personales',
+ 'Aprende a manejar tu dinero, ahorrar, invertir y usar banca digital.',
+ '/images/curso-finanzas.jpg', 'Finanzas', 4, 'virtual', 90.00, 1),
+
+('Inteligencia Artificial para Emprendedores', 'ia-emprendedores',
+ 'Usa ChatGPT, Midjourney y otras IAs para crear contenido y automatizar tu negocio.',
+ '/images/curso-ia-emprendedores.jpg', 'Inteligencia Artificial', 5, 'virtual', 120.00, 1),
+
+('Creacion de Tienda Online con Shopify', 'tienda-online-shopify',
+ 'Aprende a crear y gestionar tu propia tienda online, desde cero hasta tu primera venta.',
+ '/images/curso-tienda-online.jpg', 'Negocios', 6, 'virtual', 140.00, 1),
+
+('Locucion y Creacion de Podcast', 'locucion-podcast',
+ 'Aprende a hablar en publico, grabar tu propio podcast y monetizarlo.',
+ '/images/curso-podcast.jpg', 'Comunicacion', 5, 'virtual', 100.00, 1),
+
+('Reparacion de Celulares y Tablets', 'reparacion-celulares',
+ 'Aprende a diagnosticar y reparar celulares y tablets. Curso tecnico con salida laboral.',
+ '/images/curso-reparacion-celulares.jpg', 'Tecnico', 8, 'presencial', 150.00, 1),
+
+('Instalaciones Electricas Basicas', 'instalaciones-electricas',
+ 'Aprende a realizar instalaciones electricas basicas y reparaciones del hogar de forma segura.',
+ '/images/curso-electricidad.jpg', 'Tecnico', 6, 'presencial', 130.00, 1),
+
+('Costura y Confeccion Digital', 'costura-digital',
+ 'Aprende costura basica y uso de maquinas digitales para crear tus propias prendas o emprender.',
+ '/images/curso-costura.jpg', 'Oficios', 8, 'presencial', 120.00, 1),
+
+('Reposteria y Emprendimiento', 'reposteria-emprendimiento',
+ 'Aprende a preparar postres y tortas, calcular costos y vender por redes sociales.',
+ '/images/curso-reposteria.jpg', 'Oficios', 6, 'presencial', 110.00, 1),
+
+('Huertos Urbanos y Agricultura Familiar', 'huertos-urbanos',
+ 'Aprende a cultivar tus propios alimentos en casa, sin experiencia previa.',
+ '/images/curso-huertos.jpg', 'Medio Ambiente', 5, 'presencial', 90.00, 1),
+
+('Ingles Basico para el Trabajo', 'ingles-basico-trabajo',
+ 'Aprende ingles basico orientado al trabajo, atencion al cliente y turismo.',
+ '/images/curso-ingles.jpg', 'Idiomas', 8, 'virtual', 120.00, 1);
+
+-- ============================================
+-- 11. PLANES DE PAGO (para cada curso)
+-- ============================================
+INSERT INTO payment_plans (course_id, name, installments, total_amount) VALUES
+-- Curso 1: Desarrollo Web con IA
+(1, 'Pago unico', 1, 150.00),
+(1, '3 cuotas', 3, 165.00),
+
+-- Curso 2: Ciberseguridad Basica
+(2, 'Pago unico', 1, 120.00),
+(2, '2 cuotas', 2, 130.00),
+
+-- Curso 3: Edicion de Video
+(3, 'Pago unico', 1, 100.00),
+(3, '2 cuotas', 2, 108.00),
+
+-- Curso 4: Automatizacion e IA
+(4, 'Pago unico', 1, 90.00),
+
+-- Curso 5: Videojuegos para Niños
+(5, 'Pago unico', 1, 90.00),
+(5, '2 cuotas', 2, 96.00),
+
+-- Curso 6: Robotica
+(6, 'Pago unico', 1, 130.00),
+(6, '2 cuotas', 2, 140.00),
+
+-- Curso 7: Diseño Grafico Adolescentes
+(7, 'Pago unico', 1, 110.00),
+
+-- Curso 8: Excel Avanzado
+(8, 'Pago unico', 1, 100.00),
+(8, '2 cuotas', 2, 108.00),
+
+-- Curso 9: Marketing Digital
+(9, 'Pago unico', 1, 140.00),
+(9, '2 cuotas', 2, 150.00),
+
+-- Curso 10: Contabilidad Basica
+(10, 'Pago unico', 1, 120.00),
+
+-- Curso 11: Community Manager
+(11, 'Pago unico', 1, 130.00),
+
+-- Curso 12: Fotografia Digital
+(12, 'Pago unico', 1, 110.00),
+
+-- Curso 13: Computacion Adultos Mayores
+(13, 'Pago unico', 1, 80.00),
+
+-- Curso 14: Uso del Celular Adultos Mayores
+(14, 'Pago unico', 1, 70.00),
+
+-- Curso 15: Finanzas Personales
+(15, 'Pago unico', 1, 90.00),
+
+-- Curso 16: IA para Emprendedores
+(16, 'Pago unico', 1, 120.00),
+(16, '2 cuotas', 2, 130.00),
+
+-- Curso 17: Tienda Online Shopify
+(17, 'Pago unico', 1, 140.00),
+
+-- Curso 18: Locucion y Podcast
+(18, 'Pago unico', 1, 100.00),
+
+-- Curso 19: Reparacion de Celulares
+(19, 'Pago unico', 1, 150.00),
+(19, '3 cuotas', 3, 165.00),
+
+-- Curso 20: Instalaciones Electricas
+(20, 'Pago unico', 1, 130.00),
+
+-- Curso 21: Costura y Confeccion
+(21, 'Pago unico', 1, 120.00),
+
+-- Curso 22: Reposteria
+(22, 'Pago unico', 1, 110.00),
+
+-- Curso 23: Huertos Urbanos
+(23, 'Pago unico', 1, 90.00),
+
+-- Curso 24: Ingles Basico
+(24, 'Pago unico', 1, 120.00),
+(24, '2 cuotas', 2, 130.00);
+
+-- ============================================
+-- 12. VERIFICACIÓN
+-- ============================================
+SELECT '✅ Base de datos comas_tech creada correctamente' AS estado;
+
+SELECT COUNT(*) AS total_usuarios    FROM users;
+SELECT COUNT(*) AS total_cursos      FROM courses;
+SELECT COUNT(*) AS total_planes      FROM payment_plans;
+SELECT COUNT(*) AS total_settings    FROM site_settings;
+
+SELECT `key`, `value` FROM site_settings;
+
+SELECT id, title, category, price, modality
+FROM courses
+ORDER BY id;
+
+
+
+
+
+
+
+
+
+
+
+USE comas_tech;
+
+-- Curso 1: Desarrollo Web con IA
+UPDATE courses SET image_url = '/uploads/courses/course-1790973416712-63873449.jpg' WHERE id = 1;
+
+-- Curso 2: Ciberseguridad Básica
+UPDATE courses SET image_url = '/uploads/courses/course-1790973494817-751554235.jpg' WHERE id = 2;
+
+-- Curso 3: Edición de Video
+UPDATE courses SET image_url = '/uploads/courses/course-1790973532545-260009357.jpg' WHERE id = 3;
+
+-- Curso 4: Automatización e IA
+UPDATE courses SET image_url = '/uploads/courses/course-1790973565802-983743486.jpg' WHERE id = 4;
+
+-- Curso 5: Videojuegos para Niños
+UPDATE courses SET image_url = '/uploads/courses/course-1790973606393-958641803.jpg' WHERE id = 5;
+
+-- Curso 6: Robótica Adolescentes
+UPDATE courses SET image_url = '/uploads/courses/course-1790973639393-200407892.jpg' WHERE id = 6;
+
+-- Curso 7: Diseño Gráfico
+UPDATE courses SET image_url = '/uploads/courses/course-1790973671379-135933863.jpg' WHERE id = 7;
+
+-- Curso 8: Excel Avanzado
+UPDATE courses SET image_url = '/uploads/courses/course-1790973702081-709939079.jpg' WHERE id = 8;
+
+-- Curso 9: Marketing Digital
+UPDATE courses SET image_url = '/uploads/courses/course-1790973736931-715293184.jpg' WHERE id = 9;
+
+-- Curso 10: Contabilidad
+UPDATE courses SET image_url = '/uploads/courses/course-1790973793697-366246149.jpg' WHERE id = 10;
+
+-- Curso 11: Community Manager
+UPDATE courses SET image_url = '/uploads/courses/course-1790973822520-830805569.jpg' WHERE id = 11;
+
+-- Curso 12: Fotografía Digital
+UPDATE courses SET image_url = '/uploads/courses/course-1790973854408-801689776.jpg' WHERE id = 12;
+
+-- Curso 13: Computación Adultos Mayores
+UPDATE courses SET image_url = '/uploads/courses/course-1790973887912-550603340.jpg' WHERE id = 13;
+
+-- Curso 14: Celular Adultos Mayores
+UPDATE courses SET image_url = '/uploads/courses/course-1790973924561-634838091.jpg' WHERE id = 14;
+
+-- Curso 15: Finanzas Personales
+UPDATE courses SET image_url = '/uploads/courses/course-1790973962569-495111980.jpg' WHERE id = 15;
+
+-- Curso 16: IA para Emprendedores
+UPDATE courses SET image_url = '/uploads/courses/course-1790973994346-723976182.jpg' WHERE id = 16;
+
+-- Curso 17: Tienda Online Shopify
+UPDATE courses SET image_url = '/uploads/courses/course-1790974042584-360620094.jpg' WHERE id = 17;
+
+-- Curso 18: Locución y Podcast
+UPDATE courses SET image_url = '/uploads/courses/course-1790974075305-464953014.jpg' WHERE id = 18;
+
+-- Curso 19: Reparación de Celulares
+UPDATE courses SET image_url = '/uploads/courses/course-1790974123680-696403098.jpg' WHERE id = 19;
+
+-- Curso 20: Instalaciones Eléctricas
+UPDATE courses SET image_url = '/uploads/courses/course-1790974206193-137319911.jpg' WHERE id = 20;
+
+-- Curso 21: Costura y Confección
+UPDATE courses SET image_url = '/uploads/courses/course-1790974243770-811098262.jpg' WHERE id = 21;
+
+-- Curso 22: Repostería
+UPDATE courses SET image_url = '/uploads/courses/course-1790974328305-963998092.jpg' WHERE id = 22;
+
+-- Curso 23: Huertos Urbanos
+UPDATE courses SET image_url = '/uploads/courses/course-1790974375401-759196041.jpg' WHERE id = 23;
+
+-- Curso 24: Inglés Básico
+UPDATE courses SET image_url = '/uploads/courses/course-1790974413313-344585112.jpg' WHERE id = 24;
+
+-- Verificación
+SELECT id, title, image_url FROM courses ORDER BY id;
